@@ -1,6 +1,6 @@
 name: "person_detection_preprocess"
 platform: "tensorrt_plan"
-max_batch_size: 1
+max_batch_size: 32
 
 input [
   {

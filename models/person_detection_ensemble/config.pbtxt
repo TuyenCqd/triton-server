@@ -1,6 +1,6 @@
 name: "rtdetr_ensemble"
 platform: "ensemble"
-max_batch_size: 1
+max_batch_size: 32
 
 input [
   {
@@ -25,6 +25,11 @@ output [
     name: "CLASSES"
     data_type: TYPE_INT32
     dims: [ -1 ]         # Class ID (Luôn là 0)
+  },
+  {
+    name: "NUM_DETECTIONS"
+    data_type: TYPE_INT32
+    dims: [ 1 ]          # Thêm output đếm số lượng object thực tế
   }
 ]
 
@@ -56,6 +61,7 @@ ensemble_scheduling {
       output_map { key: "FINAL_BOXES" value: "BOXES" }
       output_map { key: "FINAL_SCORES" value: "SCORES" }
       output_map { key: "FINAL_CLASSES" value: "CLASSES" }
+      output_map { key: "NUM_DETECTIONS" value: "NUM_DETECTIONS" } # Map tensor đếm số lượng ra ngoài
     }
   ]
 }

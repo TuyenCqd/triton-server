@@ -1,6 +1,5 @@
-name: "postprocess"
-platform: "ensemble_python" # Sử dụng python backend
-backend: "python"
+name: "person_detection_postprocess"
+platform: "tensorrt_plan"
 max_batch_size: 32
 
 input [
@@ -36,14 +35,5 @@ output [
     name: "FINAL_CLASSES"
     data_type: TYPE_INT32
     dims: [ -1 ]
-  },
-  {
-    name: "NUM_DETECTIONS"
-    data_type: TYPE_INT32
-    dims: [ 1 ]
   }
 ]
-
-instance_group [{ 
-    kind: KIND_GPU # Ép buộc Python Backend phải chạy trên GPU
-}]

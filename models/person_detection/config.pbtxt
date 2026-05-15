@@ -1,0 +1,30 @@
+name: "rt_detr_trt"
+platform: "tensorrt_plan"
+max_batch_size: 32
+
+# Bật Dynamic Batching để tối ưu hóa hiệu năng
+dynamic_batching {
+  preferred_batch_size: [ 4, 8, 16, 32 ]
+  max_queue_delay_microseconds: 2000  
+}
+
+input [
+  {
+    name: "input"
+    data_type: TYPE_FP32
+    dims: [ 3, 560, 560 ]
+  }
+]
+
+output [
+  {
+    name: "dets"
+    data_type: TYPE_FP32
+    dims: [ -1, -1 ]
+  },
+  {
+    name: "labels"
+    data_type: TYPE_FP32
+    dims: [ -1, 2 ]
+  }
+]

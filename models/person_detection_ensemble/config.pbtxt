@@ -32,7 +32,7 @@ ensemble_scheduling {
   step [
     # Bước 1: Tiền xử lý
     {
-      model_name: "preprocess"
+      model_name: "person_detection_preprocess"
       model_version: -1
       input_map { key: "raw_input" value: "IMAGE_IN" }
       output_map { key: "input" value: "TENSOR_560" }
@@ -48,7 +48,7 @@ ensemble_scheduling {
     },
     # Bước 3: Hậu xử lý
     {
-      model_name: "postprocess"
+      model_name: "person_detection_postprocess"
       model_version: -1
       input_map { key: "dets" value: "CORE_DETS" }
       input_map { key: "labels" value: "CORE_LABELS" }

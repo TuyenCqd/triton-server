@@ -1,7 +1,6 @@
-name: "postprocess"
-platform: "ensemble_python" # Sử dụng python backend
+name: "person_detection_postprocess"
 backend: "python"
-max_batch_size: 32
+max_batch_size: 8
 
 input [
   {

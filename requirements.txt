@@ -1,0 +1,5 @@
+opencv-python-headless==4.10.0.84
+tritonclient[all]
+glog
+numpy==1.26.4
+scikit-image

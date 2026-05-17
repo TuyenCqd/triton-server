@@ -106,6 +106,7 @@ class TritonBaseClient:
                 output_name = output_tuple[0]
                 data_from_server = results.as_numpy(output_name)
                 
+                # Ép kích thước batch, ngoại trừ NUM_DETECTIONS thường trả về shape tĩnh
                 if len(data_from_server.shape) > 0 and data_from_server.shape[0] == 1 and output_name != "NUM_DETECTIONS":
                     data_from_server = np.squeeze(data_from_server, axis=0)
                     
@@ -130,75 +131,30 @@ class PersonDetectionClient(TritonBaseClient):
             ("IMAGE_IN", "UINT8")
         ]
         
+        # Đã bổ sung NUM_DETECTIONS vào danh sách đòi Server trả về
         self.meta_outputs = [
             ("BOXES", "FP32"),
             ("SCORES", "FP32"),
-            ("CLASSES", "INT32")
+            ("CLASSES", "INT32"),
+            ("NUM_DETECTIONS", "INT32") 
         ]
 
     def preprocess(self, frame):
         # 1. Chuyển BGR (OpenCV) sang RGB 
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
         # 2. Đổi trục từ HWC sang CHW
         img_chw = np.transpose(img_rgb, (2, 0, 1))
-        
         # 3. Ép kiểu về uint8
         img_input = np.array(img_chw, dtype=np.uint8)
-        
         # 4. Thêm chiều Batch Dimension [1, 3, H, W]
         img_input = np.expand_dims(img_input, axis=0)
         
         return img_input
 
-    def postprocess(self, batch_result, conf_threshold=0.5, nms_threshold=0.4):
-        """Lọc bỏ background và xử lý chồng chéo bằng NMS (nếu mô hình chưa hội tụ tốt)"""
-        boxes = batch_result.get("BOXES", [])
-        scores = batch_result.get("SCORES", [])
-        classes = batch_result.get("CLASSES", [])
+    def postprocess(self, batch_result):
+        return batch_result  
 
-        # 1. Lọc theo Confidence Threshold
-        filtered_boxes = []
-        filtered_scores = []
-        filtered_classes = []
-
-        for box, score, cls_id in zip(boxes, scores, classes):
-            if score >= conf_threshold:
-                filtered_boxes.append(box.tolist()) # Chuyển đổi sang list cho OpenCV
-                filtered_scores.append(float(score))
-                filtered_classes.append(int(cls_id))
-
-        if len(filtered_boxes) == 0:
-            return {"BOXES": [], "SCORES": [], "CLASSES": []}
-
-        # 2. Áp dụng Non-Maximum Suppression (NMS)
-        # cv2.dnn.NMSBoxes yêu cầu format box là [x_min, y_min, width, height]
-        # (Dữ liệu của bạn hiện tại đang là [left, top, width, height] -> Rất khớp!)
-        indices = cv2.dnn.NMSBoxes(
-            bboxes=filtered_boxes, 
-            scores=filtered_scores, 
-            score_threshold=conf_threshold, 
-            nms_threshold=nms_threshold
-        )
-
-        # 3. Lấy ra kết quả cuối cùng
-        final_boxes = []
-        final_scores = []
-        final_classes = []
-
-        if len(indices) > 0:
-            for i in indices.flatten():
-                final_boxes.append(filtered_boxes[i])
-                final_scores.append(filtered_scores[i])
-                final_classes.append(filtered_classes[i])
-
-        return {
-            "BOXES": final_boxes,
-            "SCORES": final_scores,
-            "CLASSES": final_classes
-        }
-
-    def predict(self, frame, threshold=0.5, verbose=False):
+    def predict(self, frame, verbose=False):
         # 1. Preprocess
         img_blob = self.preprocess(frame)
         
@@ -210,85 +166,73 @@ class PersonDetectionClient(TritonBaseClient):
             verbose=verbose
         )
 
-        # 3. Postprocess (Lọc 300 boxes thô)
-        final_result = self.postprocess(batch_result, threshold=threshold)
+        # 3. Postprocess siêu nhẹ
+        final_result = self.postprocess(batch_result)
 
         return final_result
 
-if __name__ == "__main__":
-    # Lưu ý: Sửa lại tên triton_model_name cho khớp với tên ensemble_model trên server của bạn
-    model_ensemble = PersonDetectionClient(
-        triton_host="localhost:9187",
-        triton_model_name="rtdetr_ensemble", 
-        max_batch_size=1,
-        shared_memory=False, 
-        shared_cuda_memory=False
-    )
-
-    img_path = "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/test.jpg"
-    print(f"Đường dẫn ảnh: {img_path}")
-    frame = cv2.imread(img_path)
-    
+def load_image(image_path):
+    frame = cv2.imread(image_path)
     if frame is None:
-        logger.error("Failed to load image")
-    else:
-        # Bạn có thể thay đổi threshold tại đây (ví dụ: 0.15 hoặc 0.5)
-        # results = model_ensemble.predict(frame, threshold=0.5, verbose=True)# Gọi Inference
-        results = model_ensemble.predict(frame, verbose=True)
+        raise ValueError(f"Failed to load image from {image_path}")
+    return frame
 
-        # 1. Lấy số lượng bounding box thực tế (bỏ qua các box đệm số 0)
-        # Vì cấu hình Triton trả về mảng 1 chiều, ta lấy phần tử [0]
-        num_dets = int(results.get("NUM_DETECTIONS")[0])
-        
-        # 2. Trích xuất dữ liệu của ảnh đầu tiên (batch index 0) và cắt mảng tới vị trí num_dets
-        boxes = results.get("BOXES")[0][:num_dets]
-        scores = results.get("SCORES")[0][:num_dets]
-        classes = results.get("CLASSES")[0][:num_dets]
+def visualize_detections(frame, results, output_path=None):
+    boxes = results.get("BOXES", [])
+    scores = results.get("SCORES", [])
+    classes = results.get("CLASSES", [])
 
-        print(f"[INFO] Tìm thấy {num_dets} người vượt qua ngưỡng.")
+    num_dets = len(boxes)
+    logger.info(f"Vẽ thành công {num_dets} người lên ảnh")
 
-        # 3. Vẽ hộp giới hạn
-        for box, score, cls_id in zip(boxes, scores, classes):
-            # Mảng boxes từ Python Backend hiện trả về trực tiếp tọa độ [x1, y1, x2, y2]
-            x1, y1, x2, y2 = box
-            
-            # Ép kiểu về số nguyên để vẽ bằng OpenCV
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            
-            # Vẽ hộp giới hạn (Màu xanh lục, độ dày 2)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            
-            # Ghi text Score
-            label = f"Person: {score:.2f}"
-            cv2.putText(frame, label, (x1, max(y1 - 10, 0)), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    for box, score, cls_id in zip(boxes, scores, classes):
+        # Tọa độ từ Triton hiện tại trả thẳng [x1, y1, x2, y2]
+        x1, y1, x2, y2 = box
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
 
-        # 4. Lưu ảnh kết quả ra file
-        output_path = "result_test.jpg"
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        label = f"Person: {score:.2f}"
+        cv2.putText(frame, label, (x1, max(y1 - 10, 0)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    if output_path:
         cv2.imwrite(output_path, frame)
-        print(f"[INFO] Đã lưu ảnh kết quả tại: {output_path}")
-        
-        # boxes = results.get("BOXES", [])
-        # scores = results.get("SCORES", [])
-        # classes = results.get("CLASSES", [])
+        logger.info(f"Result saved to: {output_path}")
 
-        # print(f"[INFO] Tìm thấy {len(boxes)} người vượt qua ngưỡng.")
+    return frame
 
-        # for box, score, cls_id in zip(boxes, scores, classes):
-        #     # Giải mã tọa độ
-        #     left, top, w, h = box
-        #     x1, y1 = int(left), int(top)
-        #     x2, y2 = int(left + w), int(top + h)
-            
-        #     # Vẽ hộp giới hạn
-        #     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            
-        #     # Ghi text Score
-        #     label = f"Person: {score:.2f}"
-        #     cv2.putText(frame, label, (x1, max(y1 - 10, 0)), 
-        #                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+if __name__ == "__main__":
+    import argparse
 
-        # # Lưu ảnh kết quả ra file
-        # output_path = "result_test.jpg"
-        # cv2.imwrite(output_path, frame)
-        # print(f"[INFO] Đã lưu ảnh kết quả tại: {output_path}")
+    parser = argparse.ArgumentParser(description="Person Detection Inference")
+    parser.add_argument("--image", type=str, required=True, help="Path to input image")
+    parser.add_argument("--host", type=str, default="localhost:8001", help="Triton server host")
+    parser.add_argument("--model", type=str, default="person_detection_ensemble", help="Model name")
+    parser.add_argument("--output", type=str, default="result_person_detection.jpg", help="Output image path")
+    parser.add_argument("--threshold", type=float, default=0.5, help="Confidence threshold")
+    parser.add_argument("--batch-size", type=int, default=1, help="Batch size")
+
+    args = parser.parse_args()
+
+    try:
+        model_ensemble = PersonDetectionClient(
+            triton_host=args.host,
+            triton_model_name=args.model,
+            max_batch_size=args.batch_size,
+            shared_memory=False,
+            shared_cuda_memory=False
+        )
+
+        frame = load_image(args.image)
+        logger.info(f"Image shape: {frame.shape}")
+
+        results = model_ensemble.predict(frame, verbose=True)
+        print("Detection Results:", results)
+        # print(f"Boxes: {results['BOXES']}")
+        # print(f"Scores: {results['SCORES']}")
+        # print(f"Classes: {results['CLASSES']}")
+        visualize_detections(frame, results, output_path=args.output)
+
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        sys.exit(1)

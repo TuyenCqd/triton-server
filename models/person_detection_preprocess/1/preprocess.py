@@ -10,12 +10,14 @@ class Preprocess(nn.Module):
         self.std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
     def forward(self, x):
-        # x shape: [1, 3, H, W], dtype: uint8 (từ Client gửi lên)
+        # x shape: [Batch, 3, H, W], dtype: uint8 (từ Client gửi lên)
+        batch_size = x.shape[0]
+        h = x.shape[2]
+        w = x.shape[3]
         
-        # 1. Lưu lại kích thước gốc để đưa cho Postprocess
-        orig_h = torch.tensor([x.shape[2]], dtype=torch.float32)
-        orig_w = torch.tensor([x.shape[3]], dtype=torch.float32)
-        orig_shape = torch.stack([orig_h, orig_w], dim=-1) # Shape: [1, 2]
+        # 1. Lưu lại kích thước gốc và nhân bản (repeat) cho đồng bộ với kích thước Batch
+        # Tạo tensor [1, 2] chứa [h, w], sau đó repeat thành [Batch, 2]
+        orig_shape = torch.tensor([[h, w]], dtype=torch.float32, device=x.device).repeat(batch_size, 1)
 
         # 2. Resize ảnh về 560x560
         x = F.interpolate(x.float(), size=(560, 560), mode='bilinear', align_corners=False)
@@ -29,7 +31,7 @@ class Preprocess(nn.Module):
 model = Preprocess()
 model.eval()
 
-# Dummy input với kích thước giả định (Client có thể gửi size khác)
+# Dummy input với kích thước giả định (Lúc export chỉ cần batch=1 làm mẫu)
 dummy_input = torch.zeros(1, 3, 1080, 1920, dtype=torch.uint8)
 
 torch.onnx.export(
@@ -38,9 +40,12 @@ torch.onnx.export(
     "preprocess.onnx",
     input_names=["raw_input"],
     output_names=["input", "orig_shape"],
+    # BẮT BUỘC: Khai báo chiều 0 (Batch) là dynamic cho cả INPUT và OUTPUT
     dynamic_axes={
-        "raw_input": {2: "height", 3: "width"} # Cho phép H và W đầu vào thay đổi thoải mái
+        "raw_input": {0: "batch_size", 2: "height", 3: "width"}, 
+        "input": {0: "batch_size"},
+        "orig_shape": {0: "batch_size"}
     },
-    opset_version=14
+    opset_version=17
 )
-print("Xuất thành công: preprocess.onnx")
+print("Xuất thành công: preprocess.onnx (Đã hỗ trợ Dynamic Batching)")

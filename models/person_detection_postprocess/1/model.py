@@ -1,12 +1,11 @@
 import triton_python_backend_utils as pb_utils
 import torch
 import torchvision
-import json
 
 class TritonPythonModel:
     def initialize(self, args):
         """Khởi tạo khi Triton nạp mô hình."""
-        self.conf_threshold = 0.5  # Ngưỡng tự tin
+        self.conf_threshold = 0.15  # Ngưỡng tự tin
         self.nms_threshold = 0.45  # Ngưỡng đè nhau của NMS
         
         # Bật thiết bị GPU mặc định

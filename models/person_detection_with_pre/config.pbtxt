@@ -1,0 +1,50 @@
+name: "person_detection_with_pre"
+platform: "ensemble"
+max_batch_size: 8
+
+input [
+  {
+    name: "IMAGE_IN"
+    data_type: TYPE_UINT8
+    dims: [ 3, -1, -1 ]  # Nhận H, W tùy ý
+  }
+]
+
+output [
+  {
+    name: "CORE_DETS"
+    data_type: TYPE_FP32
+    dims: [ -1, -1 ]
+  },
+  {
+    name: "CORE_LABELS"
+    data_type: TYPE_FP32
+    dims: [ -1, 2 ]
+  },
+  {
+    name: "ORIG_SHAPE"
+    data_type: TYPE_FP32
+    dims: [ 2 ]
+  }
+]
+
+ensemble_scheduling {
+  step [
+    # Bước 1: Tiền xử lý
+    {
+      model_name: "person_detection_preprocess"
+      model_version: -1
+      input_map { key: "raw_input" value: "IMAGE_IN" }
+      output_map { key: "input" value: "TENSOR_560" }
+      output_map { key: "orig_shape" value: "ORIG_SHAPE" } # Giữ lại shape!
+    },
+    # Bước 2: Model chính (RT-DETR)
+    {
+      model_name: "person_detection"  # Thay tên thư mục model core của bạn
+      model_version: -1
+      input_map { key: "input" value: "TENSOR_560" }
+      output_map { key: "dets" value: "CORE_DETS" }
+      output_map { key: "labels" value: "CORE_LABELS" }
+    }
+  ]
+}

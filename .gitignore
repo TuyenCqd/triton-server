@@ -1,0 +1,54 @@
+# Model artifacts
+*.plan
+*.engine
+*.onnx
+*.cache
+*.pb
+*.pth
+*.pt
+
+# Large files
+*.tar.gz
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+.dockerignore
+
+# Triton
+*.log
+metrics.prom
+
+# Results
+result*.jpg
+result*.png
+results/
+test/

@@ -1,0 +1,19 @@
+name: "face_recognition_postprocess"
+backend: "python"
+max_batch_size: 0
+
+input [
+  {
+    name: "embeddings"
+    data_type: TYPE_FP32
+    dims: [ -1, 512 ]
+  }
+]
+
+output [
+  {
+    name: "norm_embeddings"
+    data_type: TYPE_FP32
+    dims: [-1, 512]
+  }
+]

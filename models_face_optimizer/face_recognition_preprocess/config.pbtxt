@@ -1,0 +1,21 @@
+name: "face_recognition_preprocess"
+backend: "python"
+max_batch_size: 1
+
+input [
+  {
+    name: "raw_image"
+    data_type: TYPE_FP32
+    dims: [ -1, -1, 3 ] # Chấp nhận ảnh có kích thước bất kỳ (H, W, C)
+  }
+]
+
+output [
+  {
+    name: "preprocessed_input"
+    data_type: TYPE_FP32
+    dims: [ 3, 112, 112 ] # Trả về đúng shape model TensorRT cần
+  }
+]
+
+instance_group [ { count: 1 kind: KIND_CPU } ]

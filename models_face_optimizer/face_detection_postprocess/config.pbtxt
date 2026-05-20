@@ -1,0 +1,44 @@
+name: "face_detection_postprocess"
+backend: "python"
+max_batch_size: 0
+
+input [
+  {
+    name: "tmp_boxes"
+    data_type: TYPE_FP32
+    dims: [ -1, 4 ]
+  },
+  {
+    name: "tmp_scores"
+    data_type: TYPE_FP32
+    dims: [ -1 ]
+  },
+  {
+    name: "tmp_landmarks"
+    data_type: TYPE_FP32
+    dims: [ -1, 10 ]
+  },
+  {
+    name: "ratio_value"
+    data_type: TYPE_FP32
+    dims: [ 1 ]
+  }
+]
+
+output [
+  {
+    name: "final_boxes"
+    data_type: TYPE_FP32
+    dims: [-1, 4]
+  },
+  {
+    name: "final_scores"
+    data_type: TYPE_FP32
+    dims: [ -1 ]
+  },
+  {
+    name: "final_landmarks"
+    data_type: TYPE_FP32
+    dims: [-1, 5, 2 ]
+  }
+]

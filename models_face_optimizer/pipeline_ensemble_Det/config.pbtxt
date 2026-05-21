@@ -42,7 +42,7 @@ output: [
 ensemble_scheduling {
   step [
     {
-      model_name: "dali_face_detection_preprocess"
+      model_name: "face_detection_preprocess"
       model_version: -1
       input_map { key: "raw_image", value: "INPUT_IMAGE" }
       output_map { key: "preprocessed_input", value: "tensor_for_detection" },

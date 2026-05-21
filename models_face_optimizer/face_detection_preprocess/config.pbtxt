@@ -1,4 +1,4 @@
-name: "dali_face_detection_preprocess"
+name: "face_detection_preprocess"
 backend: "dali"
 max_batch_size: 16
 

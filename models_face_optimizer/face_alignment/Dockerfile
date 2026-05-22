@@ -1,6 +1,6 @@
-FROM nvcr.io/nvidia/cuda:11.8.0-devel-ubuntu22.04
+FROM nvcr.io/nvidia/tritonserver:25.03-py3
 
-# Install dependencies
+# Install build dependencies for CUDA 12.8 on Ubuntu 24.04
 RUN apt-get update && apt-get install -y \
     cmake \
     git \
@@ -8,16 +8,13 @@ RUN apt-get update && apt-get install -y \
     libcudnn8 \
     libcudnn8-dev \
     wget \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Triton Server
-RUN wget https://github.com/triton-inference-server/server/releases/download/v2.30.0/tritonserver2.30.0.linux-gpu.tar.gz && \
-    tar -xzf tritonserver2.30.0.linux-gpu.tar.gz -C /opt && \
-    rm tritonserver2.30.0.linux-gpu.tar.gz
-
-# Set environment
-ENV PATH /opt/tritonserver/bin:$PATH
-ENV LD_LIBRARY_PATH /opt/tritonserver/lib:/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+# Set environment for CUDA 12.8
+ENV CUDA_HOME=/usr/local/cuda-12.8
+ENV PATH=${CUDA_HOME}/bin:$PATH
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:/opt/tritonserver/lib:$LD_LIBRARY_PATH
 
 # Copy source code
 WORKDIR /app
@@ -29,7 +26,7 @@ RUN mkdir build && \
     cd build && \
     cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-11.8 \
+    -DCUDA_TOOLKIT_ROOT_DIR=${CUDA_HOME} \
     -DTRITON_INCLUDE_PATHS=/opt/tritonserver/include && \
     make -j$(nproc)
 

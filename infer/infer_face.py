@@ -165,7 +165,8 @@ class FaceEnsembleClient(TritonBaseClient):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.meta_inputs = [
-            ("INPUT_IMAGE", "FP32")
+            # ("INPUT_IMAGE", "FP32")
+            ("INPUT_IMAGE", "UINT8")
         ]
         
         self.meta_outputs = [
@@ -177,7 +178,8 @@ class FaceEnsembleClient(TritonBaseClient):
         ]
 
     def preprocess(self, frame):
-        img_input = np.array(frame, dtype=np.float32)
+        # img_input = np.array(frame, dtype=np.float32)
+        img_input = np.array(frame, dtype=np.uint8)
         # Thêm chiều batch để thành [1, H, W, 3]
         # img_input = np.expand_dims(img_input, axis=0)
         return img_input
@@ -202,7 +204,7 @@ class FaceRegClient(TritonBaseClient):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.meta_inputs = [
-            ("INPUT_IMAGE", "FP32")
+            ("INPUT_IMAGE", "UINT8")
         ]
         
         self.meta_outputs = [
@@ -210,7 +212,8 @@ class FaceRegClient(TritonBaseClient):
         ]
 
     def preprocess(self, frame):
-        img_input = np.array(frame, dtype=np.float32)
+        # img_input = np.array(frame, dtype=np.float32)
+        img_input = np.array(frame, dtype=np.uint8)
         # Thêm chiều batch để thành [1, H, W, 3]
         # img_input = np.expand_dims(img_input, axis=0)
         return img_input
@@ -235,7 +238,8 @@ class FaceExtPreClient(TritonBaseClient):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.meta_inputs = [
-            ("person_image", "FP32"),
+            # ("person_image", "FP32"),
+            ("person_image", "UINT8"),
             ("landmarks", "FP32"),
             ("bboxes", "FP32")
         ]
@@ -247,7 +251,8 @@ class FaceExtPreClient(TritonBaseClient):
         ]
 
     def preprocess(self, frame, landmarks, bboxes):
-        img_input = np.array(frame, dtype=np.float32)
+        # img_input = np.array(frame, dtype=np.float32)
+        img_input = np.array(frame, dtype=np.uint8)
         landmarks_input = np.expand_dims(landmarks, axis=0)
         bboxes_input = np.expand_dims(bboxes, axis=0)
         # Thêm chiều batch để thành [1, H, W, 3]
@@ -309,6 +314,7 @@ def crop_and_align_face(person_img_path, save_dir):
         y2 = int(min(img_rgb.shape[0], y2 + my))
 
         face_crop = img_rgb[y1:y2, x1:x2]
+        # print("face_crop: ",face_crop)
 
 
         if face_crop.size == 0:
@@ -318,12 +324,16 @@ def crop_and_align_face(person_img_path, save_dir):
         white_bg = np.ones_like(img_rgb, dtype=np.uint8) * 255
         white_bg[y1:y2, x1:x2] = face_crop
         batchs_align = [white_bg]
+        white_bg_bgr = cv2.cvtColor(white_bg, cv2.COLOR_RGB2BGR)
+        cv2.imwrite("test1.jpg", white_bg_bgr)
 
         results_align = align_model.predict(
+            # batchs_align,
             batchs_align,
             landmarks,
             bboxes
         )
+        # print("results_align: ",results_align)
 
 
         aligned_112 = np.clip(
@@ -336,12 +346,13 @@ def crop_and_align_face(person_img_path, save_dir):
         aligned_112 = aligned_112.transpose(1, 2, 0)
 
         # RGB -> BGR để save
-        aligned_112_bgr = cv2.cvtColor(
-            aligned_112,
-            cv2.COLOR_RGB2BGR
-        )
+        # aligned_112_bgr = cv2.cvtColor(
+        #     aligned_112,
+        #     cv2.COLOR_RGB2BGR
+        # )
+        cv2.imwrite("test2.jpg", aligned_112)
 
-        return aligned_112_bgr
+        return aligned_112
 
     except Exception as e:
         print(f"Failed: {person_img_path}")
@@ -349,32 +360,33 @@ def crop_and_align_face(person_img_path, save_dir):
         print("Landmarks:", landmarks)
         print("BBoxes:", bboxes)
 
+
 if __name__ == "__main__":
     # from sklearn.metrics.pairwise import cosine_similarity
 
-    model_ensemble = FaceEnsembleClient(triton_host = "localhost:8001",
+    model_ensemble = FaceEnsembleClient(triton_host = "localhost:9187",
                                 triton_model_name="pipeline_ensemble_Det", 
                                 max_batch_size=1,
                                 shared_memory = False, 
                                 shared_cuda_memory = False)
     
     align_model = FaceExtPreClient(
-        triton_host = "localhost:8001",
-        triton_model_name="face_alignment", 
+        triton_host = "localhost:9187",
+        triton_model_name="face_alignment_op", 
         max_batch_size=1,
         shared_memory = False, 
         shared_cuda_memory = False
     )
 
     recog_model = FaceRegClient(
-        triton_host = "localhost:8001",
+        triton_host = "localhost:9187",
         triton_model_name="pipeline_reg", 
         max_batch_size=1,
         shared_memory = False, 
         shared_cuda_memory = False
     )
 
-    img_paths = "/app/cctv/frames_test3/frame_002830/frame_002830_1.jpg"
+    img_paths = "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_002575/frame_002575_2.jpg"
     img = cv2.imread(img_paths)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
@@ -382,8 +394,9 @@ if __name__ == "__main__":
         person_img_path=img_paths,
         save_dir=None
     )
+    # print("aligned: ", aligned)
 
-    cv2.imwrite("test.jpg", cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB))
+    cv2.imwrite("test3.jpg", aligned)
     batch = [aligned]
     results = recog_model.predict(batch)
     results = results[0]

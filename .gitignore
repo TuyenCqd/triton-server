@@ -52,6 +52,8 @@ result*.jpg
 result*.png
 results/
 test/
+debug_person_crops
+output_crops
 
 # Face detection
 BatchedNmsExtendLandmark/build

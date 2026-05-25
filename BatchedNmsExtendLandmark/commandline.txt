@@ -1,0 +1,23 @@
+## Build trt model phase
+Step 1: Prepare SCRFD face detection
+1. `mkdir -p BatchedNmsExtendLandmark/build && cd BatchedNmsExtendLandmark/build && cmake .. && make -j8`
+2. `sh convert.sh`
+```
+LD_PRELOAD=BatchedNmsExtendLandmark/build/libmy_plugin.so /usr/src/tensorrt/bin/trtexec \
+    --onnx=scrfd-post-320-320.onnx.nms.onnx \
+    --buildOnly --saveEngine=model.plan \
+    --minShapes=input.1:1x3x320x320 \
+    --optShapes=input.1:16x3x320x320 \
+    --maxShapes=input.1:32x3x320x320 \
+    --workspace=8192 --fp16
+```
+Step 2: run triton image
+```
+docker run -it --gpus all -v $(pwd):/app nvcr.io/nvidia/tritonserver:25.03-py3
+```
+
+Step3: Go to each model folder, run 
+```
+bash convert.sh
+```
+to convert *.onnx to model.plan trt model.

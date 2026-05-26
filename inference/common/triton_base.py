@@ -65,9 +65,9 @@ class TritonBaseClient:
         pass
         
     def run(self, batch_data, meta_inputs, meta_outputs, verbose = False):
-        
         if verbose:
             tik = time.time()
+            
         if isinstance(batch_data, list):
             total_images = len(batch_data[0]) 
         else:
@@ -81,32 +81,31 @@ class TritonBaseClient:
             outputs = []
             lower = ib * self.max_batch_size
             higher = min((ib+1)*self.max_batch_size, total_images)
-            # if verbose:
-            #     logger.info(' --> Infer batch {} from data range {}-{}'.format(ib, lower, higher))
+            
+            data = []
             if isinstance(batch_data, list) and len(batch_data) == len(meta_inputs):
-                data = batch_data
+                for one_input_tensor in batch_data:
+                    data.append(one_input_tensor[lower:higher])
             else:
-                data = [batch_data[lower:higher]]
-            if self.connection == 'GRPC':
-                for ix, input_tuple in enumerate(meta_inputs):
-                    inputs.append(grpcclient.InferInput(input_tuple[0], data[ix].shape, input_tuple[1])) # <name, shape, dtype>
-                    inputs[ix].set_data_from_numpy(data[ix])
-                    
-                for ix, output_tuple in enumerate(meta_outputs):
-                    outputs.append(grpcclient.InferRequestedOutput(output_tuple[0]))
-            else:
-                for ix, input_tuple in enumerate(meta_inputs):
-                    inputs.append(httpclient.InferInput(input_tuple[0], data[ix].shape, input_tuple[1])) # <name, shape, dtype>
-                    inputs[ix].set_data_from_numpy(data[ix])
-
-                for ix, output_tuple in enumerate(meta_outputs):
-                    outputs.append(httpclient.InferRequestedOutput(output_tuple[0]))
+                data.append(batch_data[lower:higher])
+                
+            client_mod = grpcclient if self.connection == 'GRPC' else httpclient
+            
+            for ix, input_tuple in enumerate(meta_inputs):
+                current_data = np.array(data[ix])
+                infer_input = client_mod.InferInput(input_tuple[0], current_data.shape, input_tuple[1])
+                infer_input.set_data_from_numpy(current_data)
+                inputs.append(infer_input)
+                
+            for ix, output_tuple in enumerate(meta_outputs):
+                outputs.append(client_mod.InferRequestedOutput(output_tuple[0]))
 
             results = self.model.infer(
                 model_name=self.triton_model_name,
                 inputs=inputs,
                 outputs=outputs,
-                client_timeout=None)
+                client_timeout=None
+            )
                 
             results_dict = {}
             for ix, output_tuple in enumerate(meta_outputs):
@@ -119,17 +118,14 @@ class TritonBaseClient:
                     output_name = output_tuple[0]
                     data_from_server = results_dict[output_name]
 
-                    if data_from_server.size > 0:
+                    if data_from_server.size > 0 and len(data_from_server) > i:
                         result_per_image[output_name] = data_from_server[i]
                     else:
                         result_per_image[output_name] = np.array([]) 
-                    # print('output_tuple: ', output_tuple)
-                    # result_per_image[output_tuple[0]] = results_dict[output_tuple[0]][i]
-                    # # print('result_per_image: ',result_per_image)
+                        
                 batch_results.append(result_per_image)
 
         if verbose:
             time_infer = time.time() - tik
             logger.info(f'[INFO] Inference cost: {int(time_infer * 1000)}ms')
-        
         return batch_results

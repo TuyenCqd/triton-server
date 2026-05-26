@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BatchFacePipeline:
-    def __init__(self, triton_host="localhost:9187", person_threshold=0.45, max_person_batch=32):
+    def __init__(self, triton_host="localhost:9187", person_threshold=0.45, max_person_batch=16):
         self.triton_host = triton_host
         self.person_threshold = person_threshold
         self.max_person_batch = max_person_batch
@@ -27,25 +27,30 @@ class BatchFacePipeline:
         )
         self.face_det_ensemble = FaceEnsembleClient(
             triton_host=self.triton_host, triton_model_name="pipeline_ensemble_Det", 
-            max_batch_size=1, shared_memory=False, shared_cuda_memory=False
+            max_batch_size=self.max_person_batch, shared_memory=False, shared_cuda_memory=False
         )
         self.face_align_model = FaceExtPreClient(
             triton_host=self.triton_host, triton_model_name="face_alignment_op", 
-            max_batch_size=1, shared_memory=False, shared_cuda_memory=False
+            max_batch_size=self.max_person_batch, shared_memory=False, shared_cuda_memory=False
         )
         self.face_recog_ensemble = FaceRegClient(
             triton_host=self.triton_host, triton_model_name="pipeline_reg", 
-            max_batch_size=1, shared_memory=False, shared_cuda_memory=False
+            max_batch_size=self.max_person_batch, shared_memory=False, shared_cuda_memory=False
         )
         logger.info("Init Batch Client Triton successfully!")
 
     def _crop_person_images_batch(self, frames, results):
         batch_cropped_images = []
-        for frame, res in zip(frames, results):
+        frame_ids = []
+        for idx, (frame, res) in enumerate(zip(frames, results)):
+
+            det_data = res.get("detection", res) if isinstance(res, dict) else res
+            actual_frame_idx = res.get("frame_idx", idx) if isinstance(res, dict) else idx
+
             cropped_images_single_frame = []
             h_img, w_img, _ = frame.shape
-            boxes = res.get("BOXES", [])
-
+            # boxes = res.get("BOXES", [])
+            boxes = det_data.get("BOXES", det_data.get("tmp_boxes", []))
             for box in boxes:
                 x1, y1, x2, y2 = map(int, box[:4])
                 x1, y1 = max(0, x1), max(0, y1)
@@ -54,9 +59,10 @@ class BatchFacePipeline:
                 if x2 > x1 and y2 > y1:
                     cropped_images_single_frame.append(frame[y1:y2, x1:x2].copy())
             batch_cropped_images.append(cropped_images_single_frame)
-        return batch_cropped_images  
+            frame_ids.append(actual_frame_idx)
+        return batch_cropped_images, frame_ids 
 
-    def _crop_and_align_face(self, person_img, idx):
+    def _crop_and_align_face(self, person_img, idx, frame_id):
         if person_img is None or person_img.size == 0:
             return None
 
@@ -96,9 +102,9 @@ class BatchFacePipeline:
 
             
            
-            out_face_path = os.path.join("./output_crops", f"aligned_{idx}.jpg")
-            cv2.imwrite(out_face_path,  aligned_112.transpose(1, 2, 0))
-            print(f"Saved aligned face to: {out_face_path}")
+            # out_face_path = os.path.join("./output_crops", f"_frame_{frame_id}_aligned_{idx}.jpg")
+            # cv2.imwrite(out_face_path,  aligned_112.transpose(1, 2, 0))
+            # print(f"Saved aligned face to: {out_face_path}")
             
             return aligned_112.transpose(1, 2, 0)
 
@@ -114,18 +120,20 @@ class BatchFacePipeline:
         if not isinstance(results, list):
             results = [results]
 
-        batch_person_crops = self._crop_person_images_batch(frames_list, results)
+        batch_person_crops, frame_id = self._crop_person_images_batch(frames_list, results)
         
         batch_output = []
 
         for img_idx, person_crops in enumerate(batch_person_crops):
             img_results = []
+
+            current_frame_id = frame_id[img_idx]
             
             for idx, person_img in enumerate(person_crops):
                 if person_img.size == 0:
                     continue
                     
-                aligned_face = self._crop_and_align_face(person_img, idx)
+                aligned_face = self._crop_and_align_face(person_img, idx, current_frame_id)
             
                 if aligned_face is not None:
                     try:
@@ -155,7 +163,8 @@ if __name__ == "__main__":
         # "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000970.jpg",
         # "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/test.jpg",
         "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000910.jpg",
-        "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000970.jpg"
+        "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000970.jpg",
+        "/mnt/data/tuyenmb/datasets/data_cctv_face/sev/Danh sách nhân viên có quyền vào MM Comp1 - 2F/File 1/05202026/14581214_165159_20052026_IMG_20260520_165031.jpg"
     ]
     
     batch_frames = []

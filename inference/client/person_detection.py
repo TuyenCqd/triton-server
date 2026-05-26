@@ -107,4 +107,13 @@ class PersonDetectionClient(TritonBaseClient):
 
         final_result = self.postprocess(batch_result, threshold=threshold, nms_threshold=0.45)
 
-        return final_result
+        results_with_idx = []
+        for idx, (frame, res) in enumerate(zip(batch_frames, final_result)):
+            frame_data = {
+                "frame_idx": idx,        
+                "shape": frame.shape,   
+                "detection": res         
+            }
+            results_with_idx.append(frame_data)
+        print("final_result person: ", final_result)
+        return results_with_idx 

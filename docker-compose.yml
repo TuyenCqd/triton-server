@@ -1,6 +1,6 @@
 services: 
   triton-server: 
-    image: nvcr.io/nvidia/tritonserver:25.03-py3 
+    image: triton-pytorch-cuda-128:v1
 
     build: 
       context: . 
@@ -22,7 +22,7 @@ services:
     
     # 4. Câu lệnh khởi chạy Triton Server nội bộ
     command: > 
-      bash -c "tritonserver --model-repository=/app/models --log-verbose=0 --log-file=/logs/server.log" 
+      bash -c "tritonserver --model-repository=/app/models --model-repository=/app/models_face_optimizer --log-verbose=0 --log-file=/logs/server.log" 
     
     # 5. Kiểm tra trạng thái sống/chết của Server
     healthcheck: 

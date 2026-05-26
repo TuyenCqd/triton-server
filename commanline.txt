@@ -6,3 +6,9 @@ docker run -it --name tis_env \
   nvcr.io/nvidia/tritonserver:25.03-py3 \
   bash
 
+docker run --rm -it --name triton_temp \
+  --gpus all \
+  -v "${PWD}:/app" \
+  -w /app \
+  nvcr.io/nvidia/tritonserver:25.03-py3 bash
+

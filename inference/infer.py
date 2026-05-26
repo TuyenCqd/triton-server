@@ -116,46 +116,126 @@ class BatchFacePipeline:
         if not frames_list:
             return []
 
+        # Step 1: Person Detection (đã batch rồi)
         results = self.person_det_ensemble.predict(frames_list, self.person_threshold, verbose=False)
         if not isinstance(results, list):
             results = [results]
 
         batch_person_crops, frame_id = self._crop_person_images_batch(frames_list, results)
-        
         batch_output = []
 
+        # Step 2: Batch Face Detection
+        all_person_imgs_rgb = []
+        person_meta = []  # Lưu metadata để tracking
+        
         for img_idx, person_crops in enumerate(batch_person_crops):
-            img_results = []
-
             current_frame_id = frame_id[img_idx]
+            for person_idx, person_img in enumerate(person_crops):
+                if person_img.size > 0:
+                    img_rgb = cv2.cvtColor(person_img, cv2.COLOR_BGR2RGB)
+                    all_person_imgs_rgb.append(img_rgb)
+                    person_meta.append({
+                        "frame_idx": img_idx,
+                        "person_idx": person_idx,
+                        "frame_id": current_frame_id,
+                        "person_img": person_img
+                    })
+        
+        if not all_person_imgs_rgb:
+            return batch_output
+
+        # Gửi tất cả person images cùng lúc (batch)
+        face_det_results = self.face_det_ensemble.predict(all_person_imgs_rgb)
+        
+        # Step 3: Batch Face Alignment
+        all_white_bgs = []
+        all_landmarks = []
+        all_bboxes = []
+        valid_face_meta = []
+        
+        for idx, (face_res, meta) in enumerate(zip(face_det_results, person_meta)):
+            landmarks = face_res.get("final_landmarks", [])
+            bboxes = face_res.get("final_boxes", [])
             
-            for idx, person_img in enumerate(person_crops):
-                if person_img.size == 0:
+            if len(bboxes) == 0:
+                continue
+            
+            try:
+                img_rgb = cv2.cvtColor(meta["person_img"], cv2.COLOR_BGR2RGB)
+                bbox = bboxes[0] if isinstance(bboxes, list) or len(bboxes.shape) > 1 else bboxes
+                x1, y1, x2, y2 = map(int, bbox[:4])
+                w, h = x2 - x1, y2 - y1
+
+                mx, my = int(w * .3), int(h * .3)
+                x1 = max(0, x1 - mx)
+                y1 = max(0, y1 - my)
+                x2 = min(img_rgb.shape[1], x2 + mx)
+                y2 = min(img_rgb.shape[0], y2 + my)
+
+                face_crop = img_rgb[y1:y2, x1:x2]
+                if face_crop.size == 0:
                     continue
+
+                white_bg = np.ones_like(img_rgb, dtype=np.uint8) * 255
+                white_bg[y1:y2, x1:x2] = face_crop
+
+                all_white_bgs.append(white_bg)
+                all_landmarks.append(landmarks)
+                all_bboxes.append(bboxes)
+                valid_face_meta.append(meta)
+                
+            except Exception as e:
+                logger.error(f"Error processing face: {e}")
+        
+        if not all_white_bgs:
+            return batch_output
+        
+        # Gửi tất cả face alignment cùng lúc (batch)
+        align_results = self.face_align_model.predict(
+            all_white_bgs, 
+            np.array(all_landmarks), 
+            np.array(all_bboxes)
+        )
+        
+        # Step 4: Batch Face Embedding
+        all_aligned_faces = []
+        embedding_meta = []
+        
+        for align_res, meta in zip(align_results, valid_face_meta):
+            try:
+                aligned_112 = np.clip(
+                    align_res["face_aligned_112"] * 128.0 + 127.5, 0, 255
+                ).astype(np.uint8)
+                aligned_face_hwc = aligned_112.transpose(1, 2, 0)
+                
+                all_aligned_faces.append(aligned_face_hwc)
+                embedding_meta.append(meta)
+            except Exception as e:
+                logger.error(f"Error converting aligned face: {e}")
+        
+        if all_aligned_faces:
+            # Gửi tất cả embedding cùng lúc (batch)
+            embedding_results = self.face_recog_ensemble.predict(all_aligned_faces)
+            
+            # Step 5: Tập hợp kết quả
+            for embed_res, meta, aligned_face in zip(embedding_results, embedding_meta, all_aligned_faces):
+                embeddings = embed_res.get("norm_embeddings", None)
+                if embeddings is not None:
+                    # Thêm vào kết quả của frame tương ứng
+                    frame_idx = meta["frame_idx"]
                     
-                aligned_face = self._crop_and_align_face(person_img, idx, current_frame_id)
-            
-                if aligned_face is not None:
-                    try:
-                        recog_results = self.face_recog_ensemble.predict([aligned_face])
-                        recog_results = recog_results[0]
-                        embeddings = recog_results.get("norm_embeddings", None)
-                        
-                        if embeddings is not None:
-                            img_results.append({
-                                "person_idx": idx,
-                                "person_crop": person_img,
-                                "aligned_face": aligned_face,
-                                "embeddings": embeddings
-                            })
-                    except Exception as e:
-                        logger.error(f"Lỗi trích xuất embedding cho Ảnh {img_idx}, Người {idx}: {e}")
-            
-            batch_output.append(img_results)
-                        
+                    # Đảm bảo batch_output có đủ frame
+                    while len(batch_output) <= frame_idx:
+                        batch_output.append([])
+                    
+                    batch_output[frame_idx].append({
+                        "person_idx": meta["person_idx"],
+                        "person_crop": meta["person_img"],
+                        "aligned_face": aligned_face,
+                        "embeddings": embeddings
+                    })
+        
         return batch_output
-
-
 if __name__ == "__main__":
     pipeline = BatchFacePipeline(triton_host="localhost:9187", person_threshold=0.45)
 

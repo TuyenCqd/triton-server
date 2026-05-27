@@ -66,8 +66,13 @@ class BatchFacePipeline:
     def _crop_and_align_face(self, person_img):
         if person_img is None or person_img.size == 0:
             return None
+        
+        out_face_path = os.path.join("./output_crops", f"test_person.jpg")
+        cv2.imwrite(out_face_path,  person_img)
+        print(f"Saved aligned face to: {out_face_path}")
 
         img_rgb = cv2.cvtColor(person_img, cv2.COLOR_BGR2RGB)
+
         results = self.face_det_ensemble.predict([img_rgb])
         results = results[0]
 
@@ -75,6 +80,7 @@ class BatchFacePipeline:
         bboxes = results.get("final_boxes", [])
 
         if len(bboxes) == 0:
+            print("None face")
             return None
 
         try:
@@ -89,6 +95,12 @@ class BatchFacePipeline:
             y2 = min(img_rgb.shape[0], y2 + my)
 
             face_crop = img_rgb[y1:y2, x1:x2]
+            
+            
+            out_face_path = os.path.join("./output_crops", f"test_face.jpg")
+            cv2.imwrite(out_face_path,  face_crop)
+            print(f"Saved aligned face to: {out_face_path}")
+
             if face_crop.size == 0:
                 return None
 
@@ -99,9 +111,13 @@ class BatchFacePipeline:
             
             aligned_112 = np.clip(
                 results_align[0]["face_aligned_112"] * 128.0 + 127.5, 0, 255
-            ).astype(np.uint8)
+            ).astype(np.uint8).transpose(1, 2, 0)
+
+            out_face_path = os.path.join("./output_crops", f"test_align.jpg")
+            cv2.imwrite(out_face_path,  aligned_112)
+            print(f"Saved aligned face to: {out_face_path}")
             
-            return aligned_112.transpose(1, 2, 0)
+            return aligned_112
 
         except Exception as e:
             logger.error(f"Error when alignment face: {e}")
@@ -122,13 +138,16 @@ class BatchFacePipeline:
     def process_single_crop(self, person_img):
         if person_img is None or person_img.size == 0:
             return None
-        return self._extract_embedding(self._crop_and_align_face(person_img))
+        # aligned_face, face_box = self._crop_and_align_face(person_img)
+        aligned_face = self._crop_and_align_face(person_img)
+        return self._extract_embedding(aligned_face)
 
     def process_batch(self, frames_list):
         if not frames_list:
             return {}  
 
         results = self.person_det_ensemble.predict(frames_list, self.person_threshold, verbose=False)
+        print("results person: ", results)
         results = results if isinstance(results, list) else [results]
         batch_person_crops, frame_id = self._crop_person_images_batch(frames_list, results)
         
@@ -139,8 +158,16 @@ class BatchFacePipeline:
                 if person_img.size == 0:
                     continue
                 
-                emb = self._extract_embedding(self._crop_and_align_face(person_img))
+                aligned_face = self._crop_and_align_face(person_img)
+            
+                emb = self._extract_embedding(aligned_face)
+                
                 if emb is not None:
+                    img_results.append({
+                        "person_idx": int(idx), 
+                        "embeddings": emb,
+                        # "face_box": face_box # Thêm vào output nếu cần
+                    })
                     img_results.append({"person_idx": int(idx), "embeddings": emb})
                     
             batch_output[str(frame_id[img_idx])] = img_results
@@ -153,14 +180,7 @@ if __name__ == "__main__":
     pipeline = BatchFacePipeline(triton_host="localhost:9187", person_threshold=0.45)
 
     img_paths = [
-        # "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000970.jpg",
-        # "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/test.jpg",
-        "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000910.jpg",
-        "/mnt/data/tuyenmb/datasets/data_cctv_face/sev/Danh sách nhân viên có quyền vào MM Comp1 - 2F/File 1/05212026/14581214_133735_21052026_20260521_133652.jpg",
-        "/mnt/data/tuyenmb/datasets/data_cctv_face/sev/Danh sách nhân viên có quyền vào MM Comp1 - 2F/File 1/05202026/14581214_165159_20052026_IMG_20260520_165031.jpg",
-        "http://107.120.93.24:9122/employee-faces/faces/26507931/26507931_1.jpg",
-        "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000970.jpg",
-        "/mnt/data/tuyenmb/datasets/data_cctv_face/sev/Danh sách nhân viên có quyền vào MM Comp1 - 2F/File 1/05212026/14581214_135524_21052026_20260521_135452.jpg"
+        "http://107.120.93.24:9122/employee-faces/faces/2025194202/2025194202_1.jpg"
     ]
     
     batch_frames = []
@@ -187,7 +207,8 @@ if __name__ == "__main__":
     
     logger.info(f"Loading batch iclude: {len(batch_frames)} imgs input into Class.")        
     
-    all_batch_results = pipeline.process_batch(batch_frames)
+    # all_batch_results = pipeline.process_batch(batch_frames)
+    all_batch_results = pipeline.process_single_crop(batch_frames[0])
     # print("all_batch_results: ", all_batch_results)
     
     # for f_id, objects_in_image in all_batch_results.items():

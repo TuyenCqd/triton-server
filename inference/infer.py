@@ -4,7 +4,6 @@ import logging
 import cv2
 import numpy as np
 import glog as logger
-import requests 
 
 from client.person_detection import PersonDetectionClient
 from client.face_detection import FaceEnsembleClient
@@ -115,7 +114,7 @@ class BatchFacePipeline:
 
     def process_batch(self, frames_list):
         if not frames_list:
-            return {}  
+            return []
 
         results = self.person_det_ensemble.predict(frames_list, self.person_threshold, verbose=False)
         if not isinstance(results, list):
@@ -123,11 +122,12 @@ class BatchFacePipeline:
 
         batch_person_crops, frame_id = self._crop_person_images_batch(frames_list, results)
         
-        batch_output = {}
+        batch_output = []
 
         for img_idx, person_crops in enumerate(batch_person_crops):
             img_results = []
-            current_frame_id = str(frame_id[img_idx])
+
+            current_frame_id = frame_id[img_idx]
             
             for idx, person_img in enumerate(person_crops):
                 if person_img.size == 0:
@@ -143,13 +143,15 @@ class BatchFacePipeline:
                         
                         if embeddings is not None:
                             img_results.append({
-                                "person_idx": int(idx),
-                                "embeddings": embeddings.tolist()
+                                "person_idx": idx,
+                                "person_crop": person_img,
+                                "aligned_face": aligned_face,
+                                "embeddings": embeddings
                             })
                     except Exception as e:
                         logger.error(f"Lỗi trích xuất embedding cho Ảnh {img_idx}, Người {idx}: {e}")
             
-            batch_output[current_frame_id] = img_results
+            batch_output.append(img_results)
                         
         return batch_output
 
@@ -161,50 +163,27 @@ if __name__ == "__main__":
         # "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000970.jpg",
         # "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/test.jpg",
         "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000910.jpg",
-        "/mnt/data/tuyenmb/datasets/data_cctv_face/sev/Danh sách nhân viên có quyền vào MM Comp1 - 2F/File 1/05212026/14581214_133735_21052026_20260521_133652.jpg",
-        "/mnt/data/tuyenmb/datasets/data_cctv_face/sev/Danh sách nhân viên có quyền vào MM Comp1 - 2F/File 1/05202026/14581214_165159_20052026_IMG_20260520_165031.jpg",
-        "http://107.120.93.24:9122/employee-faces/faces/26507931/26507931_1.jpg",
         "/mnt/data/tuyenmb/projects/cctv-face-demo/vi-cctv-inference/infer/test_imgs/frames_test4/frame_000970.jpg",
-        "/mnt/data/tuyenmb/datasets/data_cctv_face/sev/Danh sách nhân viên có quyền vào MM Comp1 - 2F/File 1/05212026/14581214_135524_21052026_20260521_135452.jpg"
+        "/mnt/data/tuyenmb/datasets/data_cctv_face/sev/Danh sách nhân viên có quyền vào MM Comp1 - 2F/File 1/05202026/14581214_165159_20052026_IMG_20260520_165031.jpg"
     ]
     
     batch_frames = []
     for p in img_paths:
-        print(p)
-        if p.startswith("http://") or p.startswith("https://"):
-            try:
-                response = requests.get(p, timeout=5) 
-                if response.status_code == 200:
-                    arr = np.asarray(bytearray(response.content), dtype=np.uint8)
-                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                    if img is not None:
-                        batch_frames.append(img)
-                else:
-                    logger.warning(f"Không thể tải ảnh từ URL (Status code: {response.status_code}): {p}")
-            except Exception as e:
-                logger.error(f"Lỗi khi download ảnh từ URL {p}: {e}")
-        
-        else:
-            if os.path.exists(p):
-                img = cv2.imread(p)
-                if img is not None:
-                    batch_frames.append(img)
+        if os.path.exists(p):
+            img = cv2.imread(p)
+            if img is not None:
+                batch_frames.append(img)
     
     logger.info(f"Loading batch iclude: {len(batch_frames)} imgs input into Class.")        
     
     all_batch_results = pipeline.process_batch(batch_frames)
     # print("all_batch_results: ", all_batch_results)
     
-    # for f_id, objects_in_image in all_batch_results.items():
-    #     print(f"\n================ KẾT QUẢ CỦA FRAME ID: {f_id} ================")
-    #     print(f"-> Detected {len(objects_in_image)} valid face.")
+    for img_idx, objects_in_image in enumerate(all_batch_results):
+        print(f"\n================ KẾT QUẢ ẢNH THỨ {img_idx} ================")
+        print(f"-> Detected {len(objects_in_image)} valid face.")
         
-    #     for obj in objects_in_image:
-    #         print(f"  [Person {obj['person_idx']}]")
-    #         print(f"  - Shape of vector Embedding: {obj['embeddings'].shape}")
-    #         print(f"  - L2 Norm: {np.linalg.norm(obj['embeddings']):.4f}")
-    import json
-    with open("face_features_output.json", "w", encoding="utf-8") as f:
-        json.dump(all_batch_results, f, ensure_ascii=False, indent=4)
-        
-    print("✓ Đã xuất cấu trúc JSON mong muốn ra file thành công!")
+        for obj in objects_in_image:
+            print(f"  [Person {obj['person_idx']}]")
+            print(f"  - Shape of vector Embedding: {obj['embeddings'].shape}")
+            print(f"  - L2 Norm: {np.linalg.norm(obj['embeddings']):.4f}")

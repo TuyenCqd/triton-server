@@ -1,0 +1,61 @@
+name: "person_detection_ensemble"
+platform: "ensemble"
+max_batch_size: 8
+
+input [
+  {
+    name: "IMAGE_IN"
+    data_type: TYPE_UINT8
+    dims: [ 3, -1, -1 ]  # Nhận H, W tùy ý
+  }
+]
+
+output [
+  {
+    name: "BOXES"
+    data_type: TYPE_FP32
+    dims: [ -1, 4 ]      # Số lượng Box động [Left, Top, W, H]
+  },
+  {
+    name: "SCORES"
+    data_type: TYPE_FP32
+    dims: [ -1 ]         # Confidence tương ứng
+  },
+  {
+    name: "CLASSES"
+    data_type: TYPE_INT32
+    dims: [ -1 ]         # Class ID (Luôn là 0)
+  }
+]
+
+ensemble_scheduling {
+  step [
+    # Bước 1: Tiền xử lý
+    {
+      model_name: "person_detection_preprocess"
+      model_version: -1
+      input_map { key: "raw_input" value: "IMAGE_IN" }
+      output_map { key: "input" value: "TENSOR_560" }
+      output_map { key: "orig_shape" value: "ORIG_SHAPE" } # Giữ lại shape!
+    },
+    # Bước 2: Model chính (RT-DETR)
+    {
+      model_name: "person_detection"  # Thay tên thư mục model core của bạn
+      model_version: -1
+      input_map { key: "input" value: "TENSOR_560" }
+      output_map { key: "dets" value: "CORE_DETS" }
+      output_map { key: "labels" value: "CORE_LABELS" }
+    },
+    # Bước 3: Hậu xử lý
+    {
+      model_name: "person_detection_postprocess"
+      model_version: -1
+      input_map { key: "dets" value: "CORE_DETS" }
+      input_map { key: "labels" value: "CORE_LABELS" }
+      input_map { key: "orig_shape" value: "ORIG_SHAPE" }  # Nhận lại shape từ Preprocess
+      output_map { key: "FINAL_BOXES" value: "BOXES" }
+      output_map { key: "FINAL_SCORES" value: "SCORES" }
+      output_map { key: "FINAL_CLASSES" value: "CLASSES" }
+    }
+  ]
+}

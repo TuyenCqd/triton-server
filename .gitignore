@@ -43,6 +43,8 @@ coverage.xml
 # Docker
 .dockerignore
 
+.json
+
 # Triton
 *.log
 metrics.prom

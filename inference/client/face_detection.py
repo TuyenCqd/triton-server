@@ -38,7 +38,7 @@ class FaceEnsembleClient(TritonBaseClient):
             meta_outputs=self.meta_outputs,
             verbose = verbose
         )
-        print("batch_result face: ", batch_result)
+        # print("batch_result face: ", batch_result)
 
         return batch_result
 

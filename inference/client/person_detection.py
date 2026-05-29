@@ -115,5 +115,5 @@ class PersonDetectionClient(TritonBaseClient):
                 "detection": res         
             }
             results_with_idx.append(frame_data)
-        print("final_result person: ", final_result)
+        # print("final_result person: ", final_result)
         return results_with_idx 
